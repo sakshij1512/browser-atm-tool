@@ -25,9 +25,9 @@ function App() {
         placeholder="Enter product URL"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
-        style={{ width: "400px", marginRight: "10px" }}
+        style={{ width: "400px", marginRight: "10px", height:"20px" }}
       />
-      <button onClick={runTest}>Run Test</button>
+      <button onClick={runTest} style={{padding: '10px'}}>Run Test</button>
 
       {result && (
         <pre style={{ textAlign: "left", marginTop: "20px" }}>
