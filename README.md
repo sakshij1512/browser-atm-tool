@@ -22,7 +22,7 @@ cd browser-atm-tool
 
 
 ▶️ Running the Tool
-Start backend server (Node + Puppeteer)
+Start backend server (Nodejs)
 
 From server/:
 node server.js
@@ -39,7 +39,7 @@ Runs on http://localhost:5173
 
 How to use?
 1.Open http://localhost:5173 in your browser.
-2.Enter a product page URL (Shopify / BigCommerce / other).
+2.Enter a product page URL (Shopify / BigCommerce / other). Ex: "https://cornerstone-light-demo.mybigcommerce.com/scrub-brush/"
 3.Click Run Test.
 
 Results are shown in JSON format, for example:
