@@ -9,7 +9,7 @@ app.use(cors());
 app.use(express.json());
 
 // health check
-app.get("/", (req, res) => res.send("Automation MVP API running ✅"));
+app.get("/", (req, res) => res.send("Automation MVP API running"));
 
 // run test
 app.post("/api/run-test", async (req, res) => {
