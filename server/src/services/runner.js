@@ -25,7 +25,7 @@ async function findFirst(page, selectors, scopes) {
       try {
         const count = await loc.count();
         if (count > 0) {
-          await loc.waitFor({ state: "visible", timeout: 2500 }).catch(() => {});
+          await loc.waitFor({ state: "visible", timeout: 1000 }).catch(() => {});
           return { locator: loc, selector: sel };
         }
       } catch {}
@@ -49,12 +49,18 @@ async function detectPlatform(page) {
 // JSON-LD Product fallback
 async function jsonLdProduct(page) {
   try {
-    const payloads = await page.$$eval('script[type="application/ld+json"]', (nodes) =>
-      nodes
-        .map((n) => {
-          try { return JSON.parse(n.textContent || "null"); } catch { return null; }
-        })
-        .filter(Boolean)
+    const payloads = await page.$$eval(
+      'script[type="application/ld+json"]',
+      (nodes) =>
+        nodes
+          .map((n) => {
+            try {
+              return JSON.parse(n.textContent || "null");
+            } catch {
+              return null;
+            }
+          })
+          .filter(Boolean)
     );
 
     const flat = [];
@@ -68,16 +74,24 @@ async function jsonLdProduct(page) {
     };
     flatten(payloads);
 
-    const prod = flat.find((o) => /product/i.test(o?.["@type"])) || flat.find((o) => /product/i.test(o?.type));
+    const prod =
+      flat.find((o) => /product/i.test(o?.["@type"])) ||
+      flat.find((o) => /product/i.test(o?.type));
     if (!prod) return null;
 
-    const price = prod?.offers?.price || prod?.offers?.lowPrice || prod?.offers?.highPrice || prod?.offers?.priceSpecification?.price;
+    const price =
+      prod?.offers?.price ||
+      prod?.offers?.lowPrice ||
+      prod?.offers?.highPrice ||
+      prod?.offers?.priceSpecification?.price;
 
     return {
       name: prod?.name || null,
       price: price ? String(price) : null,
     };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export async function runTest({ url, platform = "auto", clickIntoCategory = true }) {
@@ -91,32 +105,76 @@ export async function runTest({ url, platform = "auto", clickIntoCategory = true
   // Console & network error tracking
   page.on("pageerror", (err) => {
     errors.consoleCount++;
-    findings.push({ type: "console", severity: "error", message: err.message, meta: { stack: String(err.stack || "") } });
+    findings.push({
+      type: "console",
+      severity: "error",
+      message: err.message,
+      meta: { stack: String(err.stack || "") },
+    });
   });
 
-  page.on("console", (msg) => { if (msg.type() === "error") { errors.consoleCount++; findings.push({ type: "console", severity: "error", message: msg.text() }); } });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") {
+      errors.consoleCount++;
+      findings.push({ type: "console", severity: "error", message: msg.text() });
+    }
+  });
 
   page.on("requestfailed", (req) => {
     errors.networkFailures++;
-    findings.push({ type: "network", severity: "warn", message: `Request failed: ${req.url()}`, meta: { method: req.method(), failure: req.failure() } });
+    findings.push({
+      type: "network",
+      severity: "warn",
+      message: `Request failed: ${req.url()}`,
+      meta: { method: req.method(), failure: req.failure() },
+    });
   });
 
   const summary = {
-    productChecks: { titleFound: false, priceFound: false, addToCartFound: false, descriptionFound: false, variantsFound: false, availabilityFound: false, metaTitleFound: false, metaDescriptionFound: false },
-    images: { total: 0, loaded: 0, broken: 0, brokenSamples: [], altMissing: 0, invalidDimensions: 0 },
+    productChecks: {
+      titleFound: false,
+      priceFound: false,
+      addToCartFound: false,
+      descriptionFound: false,
+      variantsFound: false,
+      availabilityFound: false,
+      metaTitleFound: false,
+      metaDescriptionFound: false,
+    },
+    images: {
+      total: 0,
+      loaded: 0,
+      broken: 0,
+      brokenSamples: [],
+      altMissing: 0,
+      invalidDimensions: 0,
+    },
     errors,
-    matched: { title: null, price: null, addToCart: null, description: null, variants: [], availability: null, values: {} }
+    matched: {
+      title: null,
+      price: null,
+      addToCart: null,
+      description: null,
+      variants: [],
+      availability: null,
+      values: {},
+    },
   };
 
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForLoadState("networkidle", { timeout: TIMEOUT }).catch(() => {});
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+    // wait for a key element instead of networkidle
+    await page.waitForSelector("h1, title", { timeout: 3000 }).catch(() => {});
 
     if (platform === "auto") platform = await detectPlatform(page);
     const cfg = SELECTORS[platform] || SELECTORS.commonFallback;
 
-    // Accept cookie banners
-    await page.locator(["button:has-text('Accept')","button:has-text('I agree')","button:has-text('Allow all')"].join(",")).first().click({ timeout: 1500 }).catch(() => {});
+    // Accept cookie banners quickly
+    await page
+      .locator(["button:has-text('Accept')", "button:has-text('I agree')", "button:has-text('Allow all')"].join(","))
+      .first()
+      .click({ timeout: 500 })
+      .catch(() => {});
 
     const scopes = await buildScopes(page, cfg.container || []);
 
@@ -125,28 +183,42 @@ export async function runTest({ url, platform = "auto", clickIntoCategory = true
     if (!productTitleProbe && cfg.categoryTitle && clickIntoCategory) {
       const catLink = await findFirst(page, cfg.categoryTitle, scopes);
       if (catLink) {
-        await Promise.all([page.waitForLoadState("domcontentloaded"), catLink.locator.click({ timeout: 4000 })]).catch(() => {});
-        await page.waitForLoadState("networkidle", { timeout: TIMEOUT }).catch(() => {});
+        await Promise.all([
+          page.waitForLoadState("domcontentloaded"),
+          catLink.locator.click({ timeout: 2000 }),
+        ]).catch(() => {});
+        await page.waitForSelector(cfg.title?.[0] || "h1", { timeout: 3000 }).catch(() => {});
       }
     }
 
-    const scopes2 = await buildScopes(page, cfg.container || []);
+    // --- Core product info checks in parallel
+    const scopes2 = scopes;
+    const [titleMatch, priceMatch, atcMatch, descMatch] = await Promise.all([
+      findFirst(page, cfg.title || SELECTORS.commonFallback.title, scopes2),
+      findFirst(page, cfg.price || SELECTORS.commonFallback.price, scopes2),
+      findFirst(page, cfg.addToCart || SELECTORS.commonFallback.addToCart, scopes2),
+      findFirst(page, cfg.description || SELECTORS.commonFallback.description, scopes2),
+    ]);
 
-    // --- Title
-    const titleMatch = await findFirst(page, cfg.title || SELECTORS.commonFallback.title, scopes2);
-    if (titleMatch) { summary.productChecks.titleFound = true; summary.matched.title = titleMatch.selector; summary.matched.values.title = (await titleMatch.locator.innerText().catch(() => "")).trim(); }
-
-    // --- Price
-    const priceMatch = await findFirst(page, cfg.price || SELECTORS.commonFallback.price, scopes2);
-    if (priceMatch) { summary.productChecks.priceFound = true; summary.matched.price = priceMatch.selector; summary.matched.values.price = (await priceMatch.locator.innerText().catch(() => "")).trim(); }
-
-    // --- Add to Cart
-    const atcMatch = await findFirst(page, cfg.addToCart || SELECTORS.commonFallback.addToCart, scopes2);
-    if (atcMatch) { summary.productChecks.addToCartFound = true; summary.matched.addToCart = atcMatch.selector; }
-
-    // --- Description
-    const descMatch = await findFirst(page, cfg.description || SELECTORS.commonFallback.description, scopes2);
-    if (descMatch) { summary.productChecks.descriptionFound = true; summary.matched.description = descMatch.selector; summary.matched.values.description = (await descMatch.locator.innerText().catch(() => "")).trim(); }
+    if (titleMatch) {
+      summary.productChecks.titleFound = true;
+      summary.matched.title = titleMatch.selector;
+      summary.matched.values.title = (await titleMatch.locator.innerText().catch(() => "")).trim();
+    }
+    if (priceMatch) {
+      summary.productChecks.priceFound = true;
+      summary.matched.price = priceMatch.selector;
+      summary.matched.values.price = (await priceMatch.locator.innerText().catch(() => "")).trim();
+    }
+    if (atcMatch) {
+      summary.productChecks.addToCartFound = true;
+      summary.matched.addToCart = atcMatch.selector;
+    }
+    if (descMatch) {
+      summary.productChecks.descriptionFound = true;
+      summary.matched.description = descMatch.selector;
+      summary.matched.values.description = (await descMatch.locator.innerText().catch(() => "")).trim();
+    }
 
     // --- Variants
     summary.matched.variants = [];
@@ -165,34 +237,54 @@ export async function runTest({ url, platform = "auto", clickIntoCategory = true
 
     // --- Availability
     const availMatch = await findFirst(page, cfg.availability || ["availability"], scopes2);
-    if (availMatch) { summary.productChecks.availabilityFound = true; summary.matched.availability = availMatch.selector; summary.matched.values.availability = (await availMatch.locator.innerText().catch(() => "")).trim(); }
+    if (availMatch) {
+      summary.productChecks.availabilityFound = true;
+      summary.matched.availability = availMatch.selector;
+      summary.matched.values.availability = (await availMatch.locator.innerText().catch(() => "")).trim();
+    }
 
     // --- Meta info
     summary.matched.values.metaTitle = await page.title().catch(() => "");
     if (summary.matched.values.metaTitle) summary.productChecks.metaTitleFound = true;
-    const metaDesc = await page.$eval("head > meta[name='description']", (el) => el.getAttribute("content")).catch(() => null);
-    if (metaDesc) { summary.productChecks.metaDescriptionFound = true; summary.matched.values.metaDescription = metaDesc.trim(); }
+    const metaDesc = await page
+      .$eval("head > meta[name='description']", (el) => el.getAttribute("content"))
+      .catch(() => null);
+    if (metaDesc) {
+      summary.productChecks.metaDescriptionFound = true;
+      summary.matched.values.metaDescription = metaDesc.trim();
+    }
 
     // --- JSON-LD fallback
     if (!summary.productChecks.titleFound || !summary.productChecks.priceFound) {
       const ld = await jsonLdProduct(page);
       if (ld) {
-        if (!summary.productChecks.titleFound && ld.name) { summary.productChecks.titleFound = true; summary.matched.title = "jsonld:@type=Product.name"; summary.matched.values.title = ld.name; }
-        if (!summary.productChecks.priceFound && ld.price) { summary.productChecks.priceFound = true; summary.matched.price = "jsonld:@type=Product.offers.price"; summary.matched.values.price = ld.price; }
+        if (!summary.productChecks.titleFound && ld.name) {
+          summary.productChecks.titleFound = true;
+          summary.matched.title = "jsonld:@type=Product.name";
+          summary.matched.values.title = ld.name;
+        }
+        if (!summary.productChecks.priceFound && ld.price) {
+          summary.productChecks.priceFound = true;
+          summary.matched.price = "jsonld:@type=Product.offers.price";
+          summary.matched.values.price = ld.price;
+        }
       }
     }
 
-    // --- Images
+    // --- Images (capped to 50 for performance)
     const imgs = page.locator("img");
     summary.images.total = await imgs.count();
-    summary.images.loaded = 0; summary.images.broken = 0; summary.images.brokenSamples = [];
-    summary.images.altMissing = 0; summary.images.invalidDimensions = 0;
+    const maxImages = Math.min(summary.images.total, 50);
 
-    for (let i = 0; i < summary.images.total; i++) {
+    for (let i = 0; i < maxImages; i++) {
       const img = imgs.nth(i);
       const ok = await img.evaluate((el) => el.complete && el.naturalWidth > 0).catch(() => false);
       if (ok) summary.images.loaded++;
-      else { summary.images.broken++; const src = (await img.getAttribute("src").catch(() => null)) || ""; if (src && summary.images.brokenSamples.length < 5) summary.images.brokenSamples.push(src); }
+      else {
+        summary.images.broken++;
+        const src = (await img.getAttribute("src").catch(() => null)) || "";
+        if (src && summary.images.brokenSamples.length < 5) summary.images.brokenSamples.push(src);
+      }
 
       const alt = (await img.getAttribute("alt").catch(() => null)) || "";
       if (!alt) summary.images.altMissing++;
@@ -200,16 +292,6 @@ export async function runTest({ url, platform = "auto", clickIntoCategory = true
       const dims = await img.evaluate((el) => ({ w: el.naturalWidth, h: el.naturalHeight })).catch(() => ({ w: 0, h: 0 }));
       if (!dims.w || !dims.h) summary.images.invalidDimensions++;
     }
-
-    // --- Lazy-load images
-    const lazyImgs = page.locator("img[data-src], img.lazyload");
-    for (let i = 0; i < await lazyImgs.count(); i++) {
-      const img = lazyImgs.nth(i);
-      await img.scrollIntoViewIfNeeded().catch(() => {});
-      const ok = await img.evaluate((el) => el.complete && el.naturalWidth > 0).catch(() => false);
-      if (!ok) summary.images.broken++;
-    }
-
   } catch (err) {
     findings.push({ type: "exception", severity: "fatal", message: String(err) });
   } finally {
